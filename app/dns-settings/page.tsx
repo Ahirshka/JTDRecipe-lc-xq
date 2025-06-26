@@ -4,8 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Copy, CheckCircle, XCircle, AlertCircle, RefreshCw } from "lucide-react"
+import { Copy, RefreshCw, CheckCircle, XCircle, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface DNSRecord {
@@ -15,129 +14,118 @@ interface DNSRecord {
   priority?: number
   ttl: number
   description: string
-  status?: "checking" | "valid" | "invalid" | "unknown"
+  status: "valid" | "invalid" | "unknown"
 }
 
 interface DNSStatus {
   domain: string
+  ssl: boolean
+  accessible: boolean
+  redirects: boolean
   records: DNSRecord[]
-  overallStatus: "checking" | "valid" | "partial" | "invalid"
   lastChecked: string
 }
 
-const requiredDNSRecords: DNSRecord[] = [
-  {
-    type: "A",
-    name: "@",
-    value: "76.76.19.61",
-    ttl: 300,
-    description: "Main domain pointing to Vercel",
-  },
-  {
-    type: "CNAME",
-    name: "www",
-    value: "cname.vercel-dns.com",
-    ttl: 300,
-    description: "WWW subdomain redirect",
-  },
-  {
-    type: "MX",
-    name: "@",
-    value: "mx1.forwardemail.net",
-    priority: 10,
-    ttl: 300,
-    description: "Primary email server",
-  },
-  {
-    type: "MX",
-    name: "@",
-    value: "mx2.forwardemail.net",
-    priority: 20,
-    ttl: 300,
-    description: "Secondary email server",
-  },
-  {
-    type: "TXT",
-    name: "@",
-    value: "v=spf1 include:_spf.mx.cloudflare.net ~all",
-    ttl: 300,
-    description: "SPF record for email authentication",
-  },
-  {
-    type: "TXT",
-    name: "_dmarc",
-    value: "v=DMARC1; p=quarantine; rua=mailto:contact@justthedamnrecipe.net",
-    ttl: 300,
-    description: "DMARC policy for email security",
-  },
-]
-
 export default function DNSSettingsPage() {
-  const [dnsStatus, setDnsStatus] = useState<DNSStatus>({
-    domain: "justthedamnrecipe.net",
-    records: requiredDNSRecords.map((record) => ({ ...record, status: "unknown" })),
-    overallStatus: "unknown",
-    lastChecked: "",
-  })
-  const [isChecking, setIsChecking] = useState(false)
+  const [dnsStatus, setDnsStatus] = useState<DNSStatus | null>(null)
+  const [loading, setLoading] = useState(false)
   const { toast } = useToast()
 
-  const copyToClipboard = async (text: string, description: string) => {
+  const requiredRecords: DNSRecord[] = [
+    {
+      type: "A",
+      name: "@",
+      value: "76.76.19.61",
+      ttl: 300,
+      description: "Points your root domain to Vercel servers",
+      status: "unknown",
+    },
+    {
+      type: "CNAME",
+      name: "www",
+      value: "cname.vercel-dns.com",
+      ttl: 300,
+      description: "Points www subdomain to Vercel",
+      status: "unknown",
+    },
+    {
+      type: "MX",
+      name: "@",
+      value: "mx1.forwardemail.net",
+      priority: 10,
+      ttl: 300,
+      description: "Primary email server for contact@justthedamnrecipe.net",
+      status: "unknown",
+    },
+    {
+      type: "MX",
+      name: "@",
+      value: "mx2.forwardemail.net",
+      priority: 20,
+      ttl: 300,
+      description: "Secondary email server for contact@justthedamnrecipe.net",
+      status: "unknown",
+    },
+    {
+      type: "TXT",
+      name: "@",
+      value: "v=spf1 include:_spf.mx.cloudflare.net ~all",
+      ttl: 300,
+      description: "SPF record for email authentication",
+      status: "unknown",
+    },
+    {
+      type: "TXT",
+      name: "_dmarc",
+      value: "v=DMARC1; p=quarantine; rua=mailto:contact@justthedamnrecipe.net",
+      ttl: 300,
+      description: "DMARC policy for email security",
+      status: "unknown",
+    },
+  ]
+
+  const checkDNSStatus = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch("/api/test/dns-status")
+      const data = await response.json()
+      setDnsStatus(data)
+    } catch (error) {
+      console.error("Failed to check DNS status:", error)
+      toast({
+        title: "Error",
+        description: "Failed to check DNS status",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyToClipboard = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text)
       toast({
         title: "Copied!",
-        description: `${description} copied to clipboard`,
+        description: `${label} copied to clipboard`,
       })
-    } catch (err) {
-      toast({
-        title: "Copy failed",
-        description: "Please copy the text manually",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const checkDNSStatus = async () => {
-    setIsChecking(true)
-    try {
-      const response = await fetch("/api/test/dns-status")
-      if (response.ok) {
-        const data = await response.json()
-        setDnsStatus(data)
-      } else {
-        toast({
-          title: "DNS Check Failed",
-          description: "Unable to check DNS status. Please try again.",
-          variant: "destructive",
-        })
-      }
     } catch (error) {
-      console.error("DNS check error:", error)
       toast({
-        title: "DNS Check Error",
-        description: "Network error while checking DNS status.",
+        title: "Error",
+        description: "Failed to copy to clipboard",
         variant: "destructive",
       })
-    } finally {
-      setIsChecking(false)
     }
   }
-
-  useEffect(() => {
-    checkDNSStatus()
-  }, [])
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "valid":
-        return <CheckCircle className="h-5 w-5 text-green-500" />
+        return <CheckCircle className="w-5 h-5 text-green-500" />
       case "invalid":
-        return <XCircle className="h-5 w-5 text-red-500" />
-      case "checking":
-        return <RefreshCw className="h-5 w-5 text-blue-500 animate-spin" />
+        return <XCircle className="w-5 h-5 text-red-500" />
       default:
-        return <AlertCircle className="h-5 w-5 text-yellow-500" />
+        return <AlertCircle className="w-5 h-5 text-yellow-500" />
     }
   }
 
@@ -147,171 +135,164 @@ export default function DNSSettingsPage() {
         return <Badge className="bg-green-100 text-green-800">Valid</Badge>
       case "invalid":
         return <Badge className="bg-red-100 text-red-800">Invalid</Badge>
-      case "checking":
-        return <Badge className="bg-blue-100 text-blue-800">Checking</Badge>
       default:
         return <Badge className="bg-yellow-100 text-yellow-800">Unknown</Badge>
     }
   }
 
+  useEffect(() => {
+    checkDNSStatus()
+  }, [])
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">DNS Configuration</h1>
-          <p className="text-gray-600">
-            Configure these DNS records with your domain registrar for justthedamnrecipe.net
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">DNS Settings</h1>
+          <p className="text-gray-600">Configure DNS records for justthedamnrecipe.net</p>
         </div>
 
-        {/* Overall Status */}
+        {/* Domain Status Overview */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Domain Status: {dnsStatus.domain}</span>
-              <div className="flex items-center gap-2">
-                {getStatusBadge(dnsStatus.overallStatus)}
-                <Button onClick={checkDNSStatus} disabled={isChecking} size="sm" variant="outline">
-                  {isChecking ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Checking...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Refresh
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Domain Status</CardTitle>
+              <Button onClick={checkDNSStatus} disabled={loading} size="sm">
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            {dnsStatus.lastChecked && <p className="text-sm text-gray-500">Last checked: {dnsStatus.lastChecked}</p>}
-            <Alert className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                DNS changes can take up to 48 hours to propagate worldwide. If you just made changes, please wait before
-                checking again.
-              </AlertDescription>
-            </Alert>
+            {dnsStatus ? (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center mb-2">
+                    {getStatusIcon(dnsStatus.accessible ? "valid" : "invalid")}
+                  </div>
+                  <p className="text-sm font-medium">Domain Access</p>
+                  <p className="text-xs text-gray-500">{dnsStatus.accessible ? "Accessible" : "Not Accessible"}</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center mb-2">
+                    {getStatusIcon(dnsStatus.ssl ? "valid" : "invalid")}
+                  </div>
+                  <p className="text-sm font-medium">SSL Certificate</p>
+                  <p className="text-xs text-gray-500">{dnsStatus.ssl ? "Valid" : "Invalid"}</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center mb-2">
+                    {getStatusIcon(dnsStatus.redirects ? "valid" : "invalid")}
+                  </div>
+                  <p className="text-sm font-medium">WWW Redirect</p>
+                  <p className="text-xs text-gray-500">{dnsStatus.redirects ? "Working" : "Not Working"}</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center mb-2">
+                    <AlertCircle className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <p className="text-sm font-medium">Last Checked</p>
+                  <p className="text-xs text-gray-500">{new Date(dnsStatus.lastChecked).toLocaleTimeString()}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500">Click refresh to check domain status</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         {/* DNS Records */}
-        <div className="grid gap-6">
-          {dnsStatus.records.map((record, index) => (
-            <Card key={index}>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between text-lg">
-                  <span>
-                    {record.type} Record - {record.name === "@" ? "Root Domain" : record.name}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(record.status || "unknown")}
-                    {getStatusBadge(record.status || "unknown")}
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600 mb-4">{record.description}</p>
-
-                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                      <div className="flex items-center gap-2">
-                        <code className="bg-white px-2 py-1 rounded border text-sm">{record.type}</code>
-                        <Button size="sm" variant="ghost" onClick={() => copyToClipboard(record.type, "Record type")}>
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                      <div className="flex items-center gap-2">
-                        <code className="bg-white px-2 py-1 rounded border text-sm">{record.name}</code>
-                        <Button size="sm" variant="ghost" onClick={() => copyToClipboard(record.name, "Record name")}>
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Value</label>
+        <Card>
+          <CardHeader>
+            <CardTitle>Required DNS Records</CardTitle>
+            <p className="text-sm text-gray-600">Add these records to your domain registrar's DNS settings</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {requiredRecords.map((record, index) => (
+                <div key={index} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <code className="bg-white px-2 py-1 rounded border text-sm flex-1 break-all">{record.value}</code>
-                      <Button size="sm" variant="ghost" onClick={() => copyToClipboard(record.value, "Record value")}>
-                        <Copy className="h-4 w-4" />
-                      </Button>
+                      <Badge variant="outline">{record.type}</Badge>
+                      {getStatusBadge(record.status)}
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => copyToClipboard(record.value, `${record.type} record`)}
+                    >
+                      <Copy className="w-4 h-4 mr-1" />
+                      Copy
+                    </Button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {record.priority && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-white px-2 py-1 rounded border text-sm">{record.priority}</code>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(record.priority!.toString(), "Priority")}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">TTL</label>
-                      <div className="flex items-center gap-2">
-                        <code className="bg-white px-2 py-1 rounded border text-sm">{record.ttl}</code>
-                        <Button size="sm" variant="ghost" onClick={() => copyToClipboard(record.ttl.toString(), "TTL")}>
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <p className="font-medium text-gray-700">Name</p>
+                      <p className="font-mono bg-gray-100 px-2 py-1 rounded">{record.name}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">Value</p>
+                      <p className="font-mono bg-gray-100 px-2 py-1 rounded break-all">{record.value}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-700">TTL</p>
+                      <p className="font-mono bg-gray-100 px-2 py-1 rounded">{record.ttl}</p>
+                      {record.priority && (
+                        <>
+                          <p className="font-medium text-gray-700 mt-2">Priority</p>
+                          <p className="font-mono bg-gray-100 px-2 py-1 rounded">{record.priority}</p>
+                        </>
+                      )}
                     </div>
                   </div>
+
+                  <p className="text-xs text-gray-500 mt-2">{record.description}</p>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Instructions */}
         <Card className="mt-8">
           <CardHeader>
             <CardTitle>Setup Instructions</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <h3 className="font-semibold">1. Access Your Domain Registrar</h3>
-              <p className="text-gray-600">Log into your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.)</p>
-            </div>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold mb-2">1. Access Your Domain Registrar</h3>
+                <p className="text-sm text-gray-600">
+                  Log into your domain registrar (GoDaddy, Namecheap, etc.) and find the DNS management section.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <h3 className="font-semibold">2. Find DNS Management</h3>
-              <p className="text-gray-600">Look for "DNS Management", "DNS Records", or "Advanced DNS" section</p>
-            </div>
+              <div>
+                <h3 className="font-semibold mb-2">2. Add DNS Records</h3>
+                <p className="text-sm text-gray-600">
+                  Add each record above exactly as shown. Use the copy buttons to avoid typos.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <h3 className="font-semibold">3. Add Each Record</h3>
-              <p className="text-gray-600">Use the copy buttons above to add each DNS record exactly as shown</p>
-            </div>
+              <div>
+                <h3 className="font-semibold mb-2">3. Wait for Propagation</h3>
+                <p className="text-sm text-gray-600">
+                  DNS changes can take up to 48 hours to propagate worldwide. Use the refresh button to check status.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <h3 className="font-semibold">4. Wait for Propagation</h3>
-              <p className="text-gray-600">DNS changes can take up to 48 hours to propagate worldwide</p>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-semibold">5. Verify Configuration</h3>
-              <p className="text-gray-600">Use the "Refresh" button above to check your DNS configuration</p>
+              <div>
+                <h3 className="font-semibold mb-2">4. Verify Configuration</h3>
+                <p className="text-sm text-gray-600">Test your domain with these commands:</p>
+                <div className="bg-gray-100 p-3 rounded mt-2 font-mono text-sm">
+                  <p>dig justthedamnrecipe.net</p>
+                  <p>dig www.justthedamnrecipe.net</p>
+                  <p>dig MX justthedamnrecipe.net</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

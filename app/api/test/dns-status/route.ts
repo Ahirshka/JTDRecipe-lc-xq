@@ -3,22 +3,54 @@ import { NextResponse } from "next/server"
 export async function GET() {
   try {
     const domain = "justthedamnrecipe.net"
+    const wwwDomain = "www.justthedamnrecipe.net"
+
+    // Test domain accessibility
+    let accessible = false
+    let ssl = false
+    let redirects = false
+
+    try {
+      // Test main domain
+      const mainResponse = await fetch(`https://${domain}`, {
+        method: "HEAD",
+        timeout: 10000,
+      })
+      accessible = mainResponse.ok
+      ssl = true // If HTTPS works, SSL is valid
+    } catch (error) {
+      console.log("Main domain test failed:", error)
+    }
+
+    try {
+      // Test www redirect
+      const wwwResponse = await fetch(`https://${wwwDomain}`, {
+        method: "HEAD",
+        timeout: 10000,
+        redirect: "manual",
+      })
+      redirects = wwwResponse.status === 301 || wwwResponse.status === 302
+    } catch (error) {
+      console.log("WWW redirect test failed:", error)
+    }
+
+    // Mock DNS record status (in production, you'd use actual DNS lookup)
     const records = [
       {
         type: "A",
         name: "@",
         value: "76.76.19.61",
         ttl: 300,
-        description: "Main domain pointing to Vercel",
-        status: "checking",
+        description: "Points your root domain to Vercel servers",
+        status: accessible ? "valid" : "invalid",
       },
       {
         type: "CNAME",
         name: "www",
         value: "cname.vercel-dns.com",
         ttl: 300,
-        description: "WWW subdomain redirect",
-        status: "checking",
+        description: "Points www subdomain to Vercel",
+        status: redirects ? "valid" : "invalid",
       },
       {
         type: "MX",
@@ -27,7 +59,7 @@ export async function GET() {
         priority: 10,
         ttl: 300,
         description: "Primary email server",
-        status: "checking",
+        status: "unknown",
       },
       {
         type: "MX",
@@ -36,7 +68,7 @@ export async function GET() {
         priority: 20,
         ttl: 300,
         description: "Secondary email server",
-        status: "checking",
+        status: "unknown",
       },
       {
         type: "TXT",
@@ -44,7 +76,7 @@ export async function GET() {
         value: "v=spf1 include:_spf.mx.cloudflare.net ~all",
         ttl: 300,
         description: "SPF record for email authentication",
-        status: "checking",
+        status: "unknown",
       },
       {
         type: "TXT",
@@ -52,32 +84,38 @@ export async function GET() {
         value: "v=DMARC1; p=quarantine; rua=mailto:contact@justthedamnrecipe.net",
         ttl: 300,
         description: "DMARC policy for email security",
-        status: "checking",
+        status: "unknown",
       },
     ]
 
-    // Simulate DNS checking (in production, you'd use actual DNS lookup)
-    const checkedRecords = records.map((record) => ({
-      ...record,
-      status: Math.random() > 0.5 ? "valid" : "invalid", // Random for demo
-    }))
-
-    const validCount = checkedRecords.filter((r) => r.status === "valid").length
-    const overallStatus = validCount === records.length ? "valid" : validCount > 0 ? "partial" : "invalid"
-
     return NextResponse.json({
       domain,
-      records: checkedRecords,
-      overallStatus,
+      accessible,
+      ssl,
+      redirects,
+      records,
       lastChecked: new Date().toISOString(),
-      summary: {
-        total: records.length,
-        valid: validCount,
-        invalid: records.length - validCount,
-      },
+      status: accessible ? "online" : "offline",
+      message: accessible
+        ? "Domain is accessible and SSL is working"
+        : "Domain is not accessible - check DNS configuration",
     })
   } catch (error) {
-    console.error("DNS status check error:", error)
-    return NextResponse.json({ error: "Failed to check DNS status" }, { status: 500 })
+    console.error("DNS status check failed:", error)
+
+    return NextResponse.json(
+      {
+        domain: "justthedamnrecipe.net",
+        accessible: false,
+        ssl: false,
+        redirects: false,
+        records: [],
+        lastChecked: new Date().toISOString(),
+        status: "error",
+        message: "Failed to check DNS status",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
   }
 }
